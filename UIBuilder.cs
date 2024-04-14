@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System.Reflection;
+using UnityEngine;
 using UnityEngine.UI;
 
 namespace HPUI
@@ -18,6 +19,228 @@ namespace HPUI
             rect.localPosition = new Vector3(0, 0, 0);
             rect.sizeDelta = new Vector2(Screen.currentResolution.width, Screen.currentResolution.height);
             rect.anchoredPosition = pos;
+        }
+
+        public static void CreateLayerDropDown(GameObject parent, GameObject obj)
+        {
+            var propertyGO = CreateUIObject(obj.name + " layer container", parent);
+            _ = SetLayoutGroup<HorizontalLayoutGroup>(propertyGO, true, true, padTop: 2, padLeft: 2, padRight: 2, padBottom: 2);
+
+            Dropdown dropDown = null!;
+            _ = CreateDropdown(propertyGO, obj.name + " layer dropDown", out dropDown, "Default       ", 14, (int index) =>
+            {
+                obj.layer = index;
+            });
+
+            for (int i = 0; i < 32; i++)
+            {
+                dropDown.options.Add(new(LayerMask.LayerToName(i)));
+            }
+
+            dropDown.value = obj.layer;
+
+            _ = CreateLabel(propertyGO, obj.name + " layer name", obj.name + " layer");
+            dropDown.RefreshShownValue();
+        }
+
+        public static void CreateLayerMaskDropDown(string propertyName, GameObject parent, UnityEngine.Object obj, PropertyInfo property)
+        {
+
+            var propertyGO = CreateUIObject(propertyName + " container", parent);
+            _ = SetLayoutGroup<HorizontalLayoutGroup>(propertyGO, true, true, padTop: 2, padLeft: 2, padRight: 2, padBottom: 2);
+
+            Dropdown dropDown = null!;
+            Toggle toggle = null!;
+            _ = CreateDropdown(propertyGO, propertyName + " dropDown", out dropDown, "Default        ", 14, (int index) =>
+            {
+                int mask = (int)property.GetValue(obj, null)!;
+
+                toggle.SetIsOnWithoutNotify((mask & (1 << index)) > 0);
+            });
+
+            for (int i = 0; i < 32; i++)
+            {
+                dropDown.options.Add(new(LayerMask.LayerToName(i)));
+            }
+
+            dropDown.value = 0;
+
+            _ = CreateLabel(propertyGO, propertyName + " name", propertyName);
+
+            _ = CreateToggle(propertyGO, "enabled", out toggle, out _);
+
+            toggle.onValueChanged.AddListener(new Action<bool>((bool b) =>
+            {
+                int mask = (int)property.GetValue(obj, null)!;
+                if (b)
+                {
+                    property.SetValue(obj, mask | (1 << dropDown.value));
+                }
+                else
+                {
+                    property.SetValue(obj, mask & ~(1 << dropDown.value));
+                }
+            }));
+
+            dropDown.RefreshShownValue();
+        }
+
+        public static void CreateEnumDropDown(string propertyName, GameObject parent, object obj, PropertyInfo property)
+        {
+            if (property.PropertyType.IsEnum)
+            {
+                //change how it works between flag enums and normal enums, normal enum we just make a dropdown but for the other one we can go though all and then set the checkbox next to it
+                var propertyGO = CreateUIObject(propertyName + " container", parent);
+                _ = SetLayoutGroup<HorizontalLayoutGroup>(propertyGO, true, true, 0, 2, 2, 2, 2);
+
+                if (property.PropertyType.IsDefined(typeof(FlagsAttribute), false))
+                {
+                    Dropdown dropDown = null!;
+                    Toggle toggle = null!;
+                    _ = CreateDropdown(propertyGO, propertyName + " dropDown", out dropDown, propertyName, 14, (int index) =>
+                    {
+                        if (Enum.TryParse(property.PropertyType, dropDown.options[index].text, out var enumValue))
+                            property.SetValue(obj, enumValue);
+                    });
+
+                    int i = 0;
+                    int indexToSelect = 0;
+                    string currentSelectedValue = property.GetValue(obj, null)!.ToString()!;
+                    foreach (var name in Enum.GetNames(property.PropertyType))
+                    {
+                        if (name == currentSelectedValue)
+                            indexToSelect = i;
+                        dropDown.options.Add(new(name));
+                        ++i;
+                    }
+
+                    dropDown.value = indexToSelect;
+
+                    _ = CreateLabel(propertyGO, propertyName + " name", propertyName);
+
+                    _ = CreateToggle(propertyGO, "enabled", out toggle, out _);
+
+                    toggle.onValueChanged.AddListener(new Action<bool>((bool b) =>
+                    {
+                        int mask = (int)property.GetValue(obj, null)!;
+                        if (b)
+                        {
+                            property.SetValue(obj, mask | (int)Enum.Parse(property.PropertyType, dropDown.itemText.text));
+                        }
+                        else
+                        {
+                            property.SetValue(obj, mask & ~(int)Enum.Parse(property.PropertyType, dropDown.itemText.text));
+                        }
+                    }));
+
+                    dropDown.RefreshShownValue();
+                }
+                else
+                {
+                    Dropdown dropDown = null!;
+                    _ = CreateDropdown(propertyGO, propertyName + " dropDown", out dropDown, propertyName, 14, (int index) =>
+                    {
+                        if (Enum.TryParse(property.PropertyType, dropDown.options[index].text, out var enumValue))
+                            property.SetValue(obj, enumValue);
+                    });
+
+                    int i = 0;
+                    int indexToSelect = 0;
+                    string currentSelectedValue = property.GetValue(obj, null)!.ToString()!;
+                    foreach (var name in Enum.GetNames(property.PropertyType))
+                    {
+                        if (name == currentSelectedValue)
+                            indexToSelect = i;
+                        dropDown.options.Add(new(name));
+                        ++i;
+                    }
+
+                    dropDown.value = indexToSelect;
+                    _ = CreateLabel(propertyGO, propertyName + " name", propertyName);
+
+                    dropDown.RefreshShownValue();
+                }
+            }
+        }
+
+        public static void CreateInputField(string propertyName, GameObject parent, object obj)
+        {
+            var property = obj.GetType().GetProperty(propertyName) ?? throw new InvalidOperationException("the property " + propertyName + " does not exist on " + obj.GetType());
+
+            if (property.PropertyType == typeof(Vector3) || property.PropertyType == typeof(Vector2))
+            {
+                CreateVectorInputField(propertyName, parent, obj, property);
+            }
+            else if (property.PropertyType == typeof(bool))
+            {
+                _ = CreateToggle(parent, propertyName, out Toggle toggle, out _);
+                toggle.SetIsOnWithoutNotify((bool)property.GetValue(obj)!);
+                toggle.onValueChanged.AddListener(new Action<bool>((bool v) => property.SetValue(obj, v)));
+            }
+            else
+            {
+                var propertyGO = CreateUIObject(property.Name + " container", parent);
+                _ = SetLayoutGroup<HorizontalLayoutGroup>(propertyGO, true, true, 0, 2, 2, 2, 2);
+                InputField input = CreateInputField(propertyGO, property.Name, property.GetValue(obj)?.ToString()!).GetComponent<InputField>();
+                input.contentType = property.PropertyType == typeof(float) ? InputField.ContentType.DecimalNumber
+                    : property.PropertyType == typeof(int) ? InputField.ContentType.IntegerNumber
+                    : property.PropertyType == typeof(string) ? InputField.ContentType.Standard
+                    : throw new NotSupportedException("other types like " + property.PropertyType + " are not supported");
+                input.characterValidation = property.PropertyType == typeof(float) ? InputField.CharacterValidation.Decimal
+                    : property.PropertyType == typeof(int) ? InputField.CharacterValidation.Integer
+                    : property.PropertyType == typeof(string) ? InputField.CharacterValidation.None
+                    : throw new NotSupportedException("other types like " + property.PropertyType + " are not supported");
+                input.onSubmit.AddListener(new Action<string>((string s) => property.SetValue(obj,
+                    property.PropertyType == typeof(float) ? float.Parse(s)
+                    : property.PropertyType == typeof(int) ? int.Parse(s)
+                    : property.PropertyType == typeof(string) ? s
+                    : throw new System.NotSupportedException("other types like " + property.PropertyType + " are not supported"))));
+                _ = CreateLabel(propertyGO, property.Name + " name", " " + property.Name);
+            }
+        }
+
+        public static void CreateVectorInputField(string propertyName, GameObject parent, object obj, PropertyInfo property)
+        {
+            var vector = CreateUIObject(propertyName + " vector container", parent);
+            _ = SetLayoutGroup<VerticalLayoutGroup>(vector, true, true, 0, 2, 2, 2, 2);
+
+            var vectorType = property.PropertyType;
+            var propertyx = vectorType.GetField("x");
+            var propertyy = vectorType.GetField("y");
+            var propertyz = vectorType == typeof(Vector3) ? vectorType.GetField("z") : null!;
+            object? vectorObj = property.GetValue(obj);
+
+            if (propertyx is null || propertyy is null)
+            {
+                throw new InvalidOperationException("the vector " + propertyName + " does not contain x or y on " + obj.GetType());
+            }
+
+            var propertyXGO = CreateUIObject(property.Name + "X container", vector);
+            _ = SetLayoutGroup<HorizontalLayoutGroup>(propertyXGO, true, true, 0, 2, 2, 2, 2);
+            InputField inputx = CreateInputField(propertyXGO, property.Name + "X", propertyx.GetValue(vectorObj)?.ToString()!).GetComponent<InputField>();
+            inputx.contentType = InputField.ContentType.DecimalNumber;
+            inputx.characterValidation = InputField.CharacterValidation.Decimal;
+            inputx.onSubmit.AddListener(new Action<string>((string s) => propertyx.SetValue(vectorObj, float.Parse(s))));
+            _ = CreateLabel(propertyXGO, property.Name + "X name", " " + property.Name + "X");
+
+            var propertyYGO = CreateUIObject(property.Name + "Y container", vector);
+            _ = SetLayoutGroup<HorizontalLayoutGroup>(propertyYGO, true, true, 0, 2, 2, 2, 2);
+            InputField inputy = CreateInputField(propertyYGO, property.Name + "Y", propertyy.GetValue(vectorObj)?.ToString()!).GetComponent<InputField>();
+            inputy.contentType = InputField.ContentType.DecimalNumber;
+            inputy.characterValidation = InputField.CharacterValidation.Decimal;
+            inputy.onSubmit.AddListener(new Action<string>((string s) => propertyy.SetValue(vectorObj, float.Parse(s))));
+            _ = CreateLabel(propertyYGO, property.Name + "Y name", " " + property.Name + "Y");
+
+            if (propertyz is not null)
+            {
+                var propertyZGO = CreateUIObject(property.Name + "Z container", vector);
+                _ = SetLayoutGroup<HorizontalLayoutGroup>(propertyZGO, true, true, 0, 2, 2, 2, 2);
+                InputField inputz = CreateInputField(propertyZGO, property.Name + "Z", propertyz.GetValue(vectorObj)?.ToString()!).GetComponent<InputField>();
+                inputz.contentType = InputField.ContentType.DecimalNumber;
+                inputz.characterValidation = InputField.CharacterValidation.Decimal;
+                inputz.onSubmit.AddListener(new Action<string>((string s) => propertyz.SetValue(vectorObj, float.Parse(s))));
+                _ = CreateLabel(propertyZGO, property.Name + "Z name", " " + property.Name + "Z");
+            }
         }
 
         /// <summary>
